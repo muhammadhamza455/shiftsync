@@ -1,0 +1,440 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum ShiftStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum CoverageType {
+  SWAP
+  DROP
+}
+
+enum CoverageStatus {
+  OPEN
+  PENDING_MANAGER
+  APPROVED
+  REJECTED
+  DECLINED
+  CANCELLED
+  AUTO_CANCELLED
+  EXPIRED
+}
+
+enum AvailabilityExceptionType {
+  UNAVAILABLE
+  AVAILABLE
+}
+
+enum NotificationType {
+  SHIFT_ASSIGNED
+  SHIFT_UNASSIGNED
+  SHIFT_CHANGED
+  SHIFT_CANCELLED
+  SCHEDULE_PUBLISHED
+  SCHEDULE_UNPUBLISHED
+  SWAP_REQUESTED
+  SWAP_ACCEPTED
+  SWAP_DECLINED
+  SWAP_APPROVED
+  SWAP_REJECTED
+  SWAP_CANCELLED
+  DROP_OFFERED
+  DROP_CLAIMED
+  DROP_EXPIRED
+  OVERTIME_WARNING
+  AVAILABILITY_CHANGED
+  OVERRIDE_RECORDED
+  ASSIGNMENT_CONFLICT
+}
+
+enum AuditAction {
+  SHIFT_CREATED
+  SHIFT_UPDATED
+  SHIFT_DELETED
+  SHIFT_PUBLISHED
+  SHIFT_UNPUBLISHED
+  ASSIGNMENT_CREATED
+  ASSIGNMENT_CANCELLED
+  COVERAGE_REQUESTED
+  COVERAGE_ACCEPTED
+  COVERAGE_DECLINED
+  COVERAGE_CLAIMED
+  COVERAGE_APPROVED
+  COVERAGE_REJECTED
+  COVERAGE_CANCELLED
+  COVERAGE_EXPIRED
+  AVAILABILITY_UPDATED
+  CERTIFICATION_GRANTED
+  CERTIFICATION_REVOKED
+  SKILL_GRANTED
+  SKILL_REVOKED
+  OVERRIDE_RECORDED
+  CLOCK_IN
+  CLOCK_OUT
+  USER_UPDATED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(STAFF)
+  timezone     String   @default("America/New_York")
+  phone        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  staffProfile           StaffProfile?
+  managedLocations       ManagerAssignment[]
+  certifications         LocationCertification[]
+  skills                 StaffSkill[]
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  assignments            Assignment[]            @relation("AssignmentStaff")
+  assignmentsMade        Assignment[]            @relation("AssignmentAssigner")
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
+  emailLogs              EmailLog[]
+  auditLogs              AuditLog[]              @relation("AuditActor")
+  shiftsCreated          Shift[]                 @relation("ShiftCreator")
+  coverageRequested      CoverageRequest[]       @relation("CoverageRequester")
+  coverageTargeted       CoverageRequest[]       @relation("CoverageTarget")
+  coverageClaimed        CoverageRequest[]       @relation("CoverageClaimer")
+  coverageDecided        CoverageRequest[]       @relation("CoverageDecider")
+  overridesApproved      ConstraintOverride[]    @relation("OverrideApprover")
+  overridesSubject       ConstraintOverride[]    @relation("OverrideSubject")
+  publications           SchedulePublication[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model StaffProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  desiredWeeklyHours Int      @default(30)
+  maxWeeklyHours     Int      @default(40)
+  baseHourlyRate     Decimal  @default(18.00) @db.Decimal(10, 2)
+  overtimeMultiplier Decimal  @default(1.5) @db.Decimal(4, 2)
+  hiredAt            DateTime @default(now()) @db.Timestamptz
+}
+
+model Location {
+  id       String  @id @default(cuid())
+  name     String
+  slug     String  @unique
+  timezone String
+  address  String?
+  city     String?
+  state    String?
+  timezoneNote    String?
+  editCutoffHours Int      @default(48)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  managers       ManagerAssignment[]
+  certifications LocationCertification[]
+  shifts         Shift[]
+  publications   SchedulePublication[]
+  auditLogs      AuditLog[]
+
+  @@index([isActive])
+}
+
+model ManagerAssignment {
+  id         String   @id @default(cuid())
+  userId     String
+  locationId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@unique([userId, locationId])
+  @@index([locationId])
+}
+
+model LocationCertification {
+  id            String    @id @default(cuid())
+  userId        String
+  locationId    String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location      Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  certifiedAt   DateTime  @default(now()) @db.Timestamptz
+  revokedAt     DateTime? @db.Timestamptz
+  revokedReason String?
+
+  @@unique([userId, locationId])
+  @@index([locationId, revokedAt])
+}
+
+model Skill {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  colour    String   @default("#64748b")
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  staff  StaffSkill[]
+  shifts Shift[]
+}
+
+model StaffSkill {
+  id      String @id @default(cuid())
+  userId  String
+  skillId String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  proficiency Int       @default(2)
+  certifiedAt DateTime  @default(now()) @db.Timestamptz
+  revokedAt   DateTime? @db.Timestamptz
+
+  @@unique([userId, skillId])
+  @@index([skillId, revokedAt])
+}
+
+model AvailabilityRule {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  spansMidnight Boolean   @default(false)
+  timezone      String?
+  effectiveFrom DateTime  @default(now()) @db.Timestamptz
+  effectiveTo   DateTime? @db.Timestamptz
+  createdAt     DateTime  @default(now()) @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @db.Timestamptz
+
+  @@index([userId, dayOfWeek])
+}
+
+model AvailabilityException {
+  id     String                    @id @default(cuid())
+  userId String
+  user   User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   AvailabilityExceptionType
+  date   DateTime                  @db.Date
+  startTime     String?
+  endTime       String?
+  spansMidnight Boolean  @default(false)
+  timezone      String?
+  reason        String?
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, date])
+}
+
+model Shift {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  startUtc        DateTime    @db.Timestamptz
+  endUtc          DateTime    @db.Timestamptz
+  requiredSkillId String
+  requiredSkill   Skill       @relation(fields: [requiredSkillId], references: [id])
+  headcount       Int         @default(1)
+  status          ShiftStatus @default(DRAFT)
+  notes           String?
+  isPremium       Boolean     @default(false)
+  weekKey         String
+  publishedAt     DateTime?   @db.Timestamptz
+  version         Int         @default(1)
+  createdById     String?
+  createdBy       User?       @relation("ShiftCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now()) @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @db.Timestamptz
+
+  assignments      Assignment[]
+  coverageRequests CoverageRequest[]
+  overrides        ConstraintOverride[]
+
+  @@index([locationId, startUtc])
+  @@index([locationId, weekKey])
+  @@index([status, startUtc])
+  @@index([startUtc, endUtc])
+}
+
+model Assignment {
+  id           String           @id @default(cuid())
+  shiftId      String
+  shift        Shift            @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User             @relation("AssignmentStaff", fields: [userId], references: [id], onDelete: Cascade)
+  status       AssignmentStatus @default(ASSIGNED)
+  assignedById String?
+  assignedBy   User?            @relation("AssignmentAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  assignedAt   DateTime         @default(now()) @db.Timestamptz
+  cancelledAt  DateTime?        @db.Timestamptz
+  cancelReason String?
+  clockInAt    DateTime?        @db.Timestamptz
+  clockOutAt   DateTime?        @db.Timestamptz
+
+  overrides   ConstraintOverride[]
+  requesterOf CoverageRequest[]    @relation("CoverageRequesterAssignment")
+  targetOf    CoverageRequest[]    @relation("CoverageTargetAssignment")
+
+  @@unique([shiftId, userId])
+  @@index([userId, status])
+  @@index([shiftId, status])
+}
+
+model ConstraintOverride {
+  id           String      @id @default(cuid())
+  shiftId      String
+  shift        Shift       @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  assignmentId String?
+  assignment   Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  subjectId    String
+  subject      User        @relation("OverrideSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+  approvedById String
+  approvedBy   User        @relation("OverrideApprover", fields: [approvedById], references: [id], onDelete: Cascade)
+  ruleCode     String
+  reason       String
+  createdAt    DateTime    @default(now()) @db.Timestamptz
+
+  @@index([subjectId])
+  @@index([shiftId])
+}
+
+model SchedulePublication {
+  id            String    @id @default(cuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  weekKey       String
+  publishedById String
+  publishedBy   User      @relation(fields: [publishedById], references: [id], onDelete: Cascade)
+  publishedAt   DateTime  @default(now()) @db.Timestamptz
+  unpublishedAt DateTime? @db.Timestamptz
+  shiftCount    Int       @default(0)
+
+  @@unique([locationId, weekKey])
+  @@index([locationId])
+}
+
+model CoverageRequest {
+  id     String         @id @default(cuid())
+  type   CoverageType
+  status CoverageStatus @default(OPEN)
+
+  shiftId String
+  shift   Shift  @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  requesterId           String
+  requester             User       @relation("CoverageRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  requesterAssignmentId String
+  requesterAssignment   Assignment @relation("CoverageRequesterAssignment", fields: [requesterAssignmentId], references: [id], onDelete: Cascade)
+
+  targetId           String?
+  target             User?       @relation("CoverageTarget", fields: [targetId], references: [id], onDelete: SetNull)
+  targetAssignmentId String?
+  targetAssignment   Assignment? @relation("CoverageTargetAssignment", fields: [targetAssignmentId], references: [id], onDelete: SetNull)
+
+  claimedById String?
+  claimedBy   User?     @relation("CoverageClaimer", fields: [claimedById], references: [id], onDelete: SetNull)
+  claimedAt   DateTime? @db.Timestamptz
+
+  decidedById  String?
+  decidedBy    User?     @relation("CoverageDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime? @db.Timestamptz
+  decisionNote String?
+
+  note      String?
+  expiresAt DateTime? @db.Timestamptz
+  shiftVersionAtRequest Int      @default(1)
+  createdAt             DateTime @default(now()) @db.Timestamptz
+  updatedAt             DateTime @updatedAt @db.Timestamptz
+
+  @@index([requesterId, status])
+  @@index([targetId, status])
+  @@index([shiftId, status])
+  @@index([status, expiresAt])
+}
+
+model Notification {
+  id     String           @id @default(cuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   NotificationType
+  title  String
+  body   String
+  href   String?
+  data      Json?
+  readAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  emailLog EmailLog?
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+model EmailLog {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationId String?       @unique
+  notification   Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+  toAddress      String
+  subject        String
+  body           String
+  sentAt         DateTime      @default(now()) @db.Timestamptz
+
+  @@index([userId, sentAt])
+}
+
+model NotificationPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailSimulation Boolean  @default(false)
+  mutedTypes      Json?
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+}
+
+model AuditLog {
+  id      String      @id @default(cuid())
+  action  AuditAction
+  actorId String?
+  actor   User?       @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorLabel String
+  entityType String
+  entityId   String
+  locationId String?
+  location   Location?   @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  summary    String
+  before     Json?
+  after      Json?
+  createdAt  DateTime    @default(now()) @db.Timestamptz
+
+  @@index([entityType, entityId, createdAt])
+  @@index([locationId, createdAt])
+  @@index([createdAt])
+  @@index([action, createdAt])
+}
