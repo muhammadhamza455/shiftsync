@@ -1,0 +1,76 @@
+# Local development stack.
+#
+#   docker compose up -d db          just Postgres; run the app with `npm run dev`
+#   docker compose --profile app up  the whole thing, app included
+#
+# The app profile is opt-in because the common loop is running Next.js on the
+# host (fast refresh, real stack traces) against a containerised database.
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: shiftsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shiftsync
+      POSTGRES_PASSWORD: shiftsync
+      POSTGRES_DB: shiftsync
+      # initdb inherits the host locale otherwise, which on a Windows machine
+      # yields a WIN1252 cluster that rejects the en-dashes in location names.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5433:5432'
+    volumes:
+      # Postgres 18 images store data in a major-version subdirectory, so the
+      # mount goes at /var/lib/postgresql — NOT the pre-18 /data path, which
+      # the image now rejects outright.
+      - shiftsync-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shiftsync -d shiftsync']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: applies migrations, then exits. The app waits for it to finish
+  # successfully. Kept separate from the app image so the Prisma CLI and tsx
+  # are not shipped in the container that serves traffic.
+  migrate:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: shiftsync-migrate
+    restart: 'no'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://shiftsync:shiftsync@db:5432/shiftsync
+
+  app:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: shiftsync-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # `db` is the compose service name; inside the network Postgres is on
+      # its own port 5432, not the 5433 published to the host.
+      DATABASE_URL: postgresql://shiftsync:shiftsync@db:5432/shiftsync
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-compose-secret-change-me-0123456789abcdef}
+      AUTH_TRUST_HOST: 'true'
+      NODE_ENV: production
+      PORT: '3000'
+    ports:
+      - '3000:3000'
+
+volumes:
+  shiftsync-pgdata:
