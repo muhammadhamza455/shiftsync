@@ -1,0 +1,64 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files — the example is committed on purpose; real ones never are
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma generated client
+/src/generated
+
+# Env
+.env
+.env*.local
+
+# Playwright
+/test-results
+/playwright-report
+/blob-report
+/.playwright
+
+# Embedded dev database
+/.pgdata
+
+# Agent instruction files. `next dev` rewrites these on every start and there
+# is no opt-out, so they are ignored rather than deleted — otherwise they
+# reappear as untracked noise in every status.
+AGENTS.md
+CLAUDE.md
