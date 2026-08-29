@@ -10,9 +10,24 @@ Set these in the Vercel project, Production **and** Preview:
 | Variable | Value |
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string (use the **pooled** one if offered) |
+| `DIRECT_DATABASE_URL` | The **unpooled** string. Required whenever `DATABASE_URL` is a pooler — see below |
 | `AUTH_SECRET` | `npx auth secret` |
 | `AUTH_TRUST_HOST` | `true` |
 | `NEXT_PUBLIC_APP_URL` | The deployed URL — optional, only used for links in simulated emails |
+
+### Why both URLs
+
+A transaction pooler (Neon's `-pooler` host, PgBouncer, Supabase port 6543)
+multiplexes clients onto shared backends, so it cannot support session-level
+`LISTEN` — real-time would connect and then silently never deliver. Migrations
+are also happier on a direct connection.
+
+So the pooled URL serves ordinary queries, and `DIRECT_DATABASE_URL` is used by
+exactly two things: `prisma migrate deploy`, and the `LISTEN` connection in
+`src/lib/realtime/bus.ts`. `NOTIFY` is fine through the pooler — it is
+transaction-scoped. On Neon, the direct host is the pooled one with `-pooler`
+removed. Unset, it falls back to `DATABASE_URL`, which is correct for a plain
+local Postgres.
 
 ## 2. Deploy
 

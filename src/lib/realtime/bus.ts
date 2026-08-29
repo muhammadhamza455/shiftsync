@@ -24,7 +24,10 @@ async function connect(): Promise<void> {
   if (state.connecting) return state.connecting;
 
   state.connecting = (async () => {
-    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    const client = new Client({
+      connectionString:
+        process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL,
+    });
 
     client.on('notification', (message) => {
       if (message.channel !== REALTIME_CHANNEL || !message.payload) return;
