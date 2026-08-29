@@ -1,0 +1,24 @@
+# Build context hygiene: everything the image does not need, plus anything
+# that would leak host state into a build.
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.local
+.pgdata
+test-results
+playwright-report
+blob-report
+coverage
+e2e
+tests
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+docs
+AGENTS.md
+CLAUDE.md
