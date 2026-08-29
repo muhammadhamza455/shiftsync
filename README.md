@@ -146,6 +146,11 @@ patching from a payload, so it can't render a state the database never held.
 └── responsive: no sideways scroll, reachable nav, at 375/768/1280px
 ```
 
+The concurrency and notification suites need a **local** Postgres — they race
+real transactions, so Vitest's 5s timeout and Prisma's 2s transaction wait
+assume millisecond latency. Pointed at a remote database they time out rather
+than fail an assertion; that is the connection, not the locking.
+
 DST is tested against real transitions: an overnight window across
 spring-forward is **7** elapsed hours, across fall-back **9**, and an ISO week
 containing one is **167** or **169** hours.
