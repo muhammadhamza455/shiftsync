@@ -499,6 +499,8 @@ async function main() {
 
   const daysLeftThisWeek = 7 - localDate(NOW, 'America/New_York').dayOfWeek;
 
+  const marcoBlockStart = nextWeekMondayOffset('America/Los_Angeles');
+
   for (const weeksAgo of [1, 2]) {
     const friday = offsetToWeekday('America/New_York', 5, 0) - weeksAgo * 7;
     const saturday = offsetToWeekday('America/New_York', 6, 0) - weeksAgo * 7;
@@ -636,7 +638,7 @@ async function main() {
 
   plans.push({
     location: 'santaMonica',
-    dayOffset: 1,
+    dayOffset: marcoBlockStart - 2,
     start: '23:00',
     end: '03:00',
     skill: 'line-cook',
@@ -772,7 +774,7 @@ async function main() {
     },
   );
 
-  const nextMonday = nextWeekMondayOffset('America/Los_Angeles');
+  const nextMonday = marcoBlockStart;
   const marcoDays = [0, 1, 2, 3, 4, 5].map((d) => nextMonday + d);
   marcoDays.forEach((dayOffset, index) => {
     plans.push({
@@ -878,6 +880,50 @@ async function main() {
   );
   const skillsByKey = new Map(staffSeeds.map((s) => [s.key, s.skills]));
   const locationsByKey = new Map(staffSeeds.map((s) => [s.key, s.locations]));
+  const zoneByKey = new Map(staffSeeds.map((s) => [s.key, s.timezone]));
+
+  const REST_MIN_MS = 10 * 3_600_000;
+  const MAX_RUN_DAYS = 6;
+
+  function shortestGapMs(
+    booked: { start: Date; end: Date }[],
+    startUtc: Date,
+    endUtc: Date,
+  ): number {
+    let shortest = Number.POSITIVE_INFINITY;
+    for (const b of booked) {
+      const gap =
+        b.end <= startUtc
+          ? startUtc.getTime() - b.end.getTime()
+          : endUtc <= b.start
+            ? b.start.getTime() - endUtc.getTime()
+            : 0;
+      if (gap < shortest) shortest = gap;
+    }
+    return shortest;
+  }
+
+  function runLengthWith(
+    booked: { start: Date; end: Date }[],
+    startUtc: Date,
+    timeZone: string,
+  ): number {
+    const dayOf = (d: Date) => localDate(d, timeZone).toString();
+    const worked = new Set(booked.map((b) => dayOf(b.start)));
+    const anchor = localDate(startUtc, timeZone);
+    worked.add(anchor.toString());
+
+    let run = 1;
+    for (let i = 1; ; i += 1) {
+      if (!worked.has(anchor.subtract({ days: i }).toString())) break;
+      run += 1;
+    }
+    for (let i = 1; ; i += 1) {
+      if (!worked.has(anchor.add({ days: i }).toString())) break;
+      run += 1;
+    }
+    return run;
+  }
   const bookedByKey = new Map<string, { start: Date; end: Date }[]>();
   const skipped: string[] = [];
 
@@ -907,6 +953,14 @@ async function main() {
     });
     if (!coversInterval(windows, startUtc, endUtc).covered) {
       return 'is outside their stated availability';
+    }
+    const gap = shortestGapMs(booked, startUtc, endUtc);
+    if (gap < REST_MIN_MS) {
+      return `would get only ${(gap / 3_600_000).toFixed(1)}h rest`;
+    }
+    const run = runLengthWith(booked, startUtc, zoneByKey.get(key) ?? timeZone);
+    if (run > MAX_RUN_DAYS) {
+      return `would be their ${run}th consecutive day`;
     }
     return null;
   }
