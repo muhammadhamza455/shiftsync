@@ -62,3 +62,6 @@ next-env.d.ts
 # reappear as untracked noise in every status.
 AGENTS.md
 CLAUDE.md
+
+# Word lock files
+~$*
